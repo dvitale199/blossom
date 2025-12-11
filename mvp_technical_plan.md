@@ -1056,12 +1056,3 @@ async def extract_with_vision(file_bytes: bytes) -> str:
 ```
 
 ---
-
-## Questions to Answer Before Starting
-
-1. **Pricing model?** Free tier → paid? Per-user? This affects your cost tolerance.
-2. **Who's your first 10 users?** Friends? Reddit? This affects where to spend polish time.
-3. **Single subject or multi-subject?** Affects knowledge map relationships.
-4. **Grade level?** High school vs. college affects quiz difficulty calibration.
-
-Happy to dive deeper into any section. What's most useful to explore further?
