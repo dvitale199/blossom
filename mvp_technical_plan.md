@@ -2,7 +2,80 @@
 
 ## Executive Summary
 
-This plan optimizes for **speed to learning** (getting real user feedback fast) while avoiding decisions that would be painful to reverse. Given your Python/GCP strengths and solo developer status, I'm recommending a stack that leans heavily on managed services for undifferentiated work while keeping your AI pipeline—your core differentiator—fully custom.
+Blossom.ai is an AI-powered learning platform that helps people systematically identify gaps in their knowledge and build personalized curricula to address them. The core thesis: **AI should make people smarter, not offload their thinking.**
+
+This plan optimizes for **speed to learning** (getting real user feedback fast) while building abstractions that support the full vision: general learners, professionals, and students. The MVP focuses on **general learners** (curious adults exploring topics of interest) because that's where you have distribution—yourself and friends who want to learn things.
+
+### Why General Learners First
+
+| Factor | Student MVP | General Learner MVP |
+|--------|-------------|---------------------|
+| Distribution | Don't have it | You + friends |
+| Can dogfood | No | Yes |
+| Validation signal | Clear (grades) | Fuzzy (but solvable) |
+| Knowledge structure | Constrained (syllabus) | Open (AI-generated) |
+| Iteration speed | Slow (need users) | Fast (you are the user) |
+
+A product you can use and iterate on beats a product with cleaner metrics that you can't test.
+
+### North Star
+
+Every feature decision filters through:
+
+> **"Does this help the user understand more deeply, or does it let them avoid thinking?"**
+
+Blossom succeeds when users demonstrably know more, not when they complete tasks faster.
+
+---
+
+## Product Context
+
+### The Problem
+
+Current AI tools optimize for answers, not understanding:
+- Curious learners start courses but abandon them because content isn't calibrated to what they already know
+- Professionals know they have skill gaps but lack structured paths to address them
+- Students use ChatGPT to complete homework without learning
+
+### Three Primary Use Cases
+
+| Use Case | Knowledge Source | Assessment Signals | Timeline |
+|----------|------------------|-------------------|----------|
+| **General Learners** (MVP) | AI-generated from goal + grows with exploration | Quizzes, self-assessment | Self-paced |
+| **Professionals** | Job descriptions, skill frameworks | Self-assessment, behavioral signals | Career goals |
+| **Students** | Syllabus, coursework | Graded tests, quizzes | Semester/term |
+
+### MVP User Journey
+
+```
+1. User creates a space: "I want to understand quantum mechanics"
+
+2. AI generates initial knowledge map:
+   - Core topics and subtopics
+   - Dependencies between concepts
+   - Suggested learning sequence
+   - Estimated difficulty levels
+
+3. User takes diagnostic quiz:
+   - Identifies what they already know
+   - Surfaces existing misconceptions
+   - Calibrates starting point
+
+4. User explores and learns:
+   - Takes quizzes on specific topics
+   - Optionally adds materials (articles, videos, books)
+   - Self-assesses confidence on topics
+
+5. System tracks understanding:
+   - Assessment events from quizzes
+   - Self-reported confidence
+   - Gaps identified and prioritized
+
+6. Adaptive practice:
+   - Quizzes target weak areas
+   - Questions calibrated to edge of knowledge
+   - Progress visible on dashboard
+```
 
 ---
 
@@ -11,7 +84,7 @@ This plan optimizes for **speed to learning** (getting real user feedback fast) 
 ### Frontend: **Next.js 14 + shadcn/ui + Tailwind**
 
 **Why not Streamlit?** I know it's tempting given your experience, but Streamlit has real limitations for a consumer product:
-- No fine-grained control over UX (students/parents expect polish)
+- No fine-grained control over UX
 - Session state management becomes painful
 - File upload UX is clunky
 - No offline/PWA capabilities
@@ -26,11 +99,6 @@ This plan optimizes for **speed to learning** (getting real user feedback fast) 
 
 **The learning curve trade-off:** You'll spend ~1-2 weeks getting comfortable, but the velocity payoff is worth it. Use v0.dev (Vercel's AI) to generate initial components.
 
-**Alternatives considered:**
-- *Remix*: Great, but smaller ecosystem. Pick if you want more control over data loading.
-- *SvelteKit*: Lovely DX, but React has more resources for when you're stuck.
-- *Streamlit*: Only if you want to ship in <2 weeks and accept you'll rewrite the frontend.
-
 ### Backend: **FastAPI (your existing strength)**
 
 No reason to change. FastAPI is:
@@ -41,7 +109,7 @@ No reason to change. FastAPI is:
 **Key packages to add:**
 - `python-multipart` for file uploads
 - `celery` or `arq` for background jobs (document processing)
-- `anthropic` or `openai` SDK
+- `anthropic` SDK
 - `PyMuPDF` (fitz) for PDF parsing
 - `pydantic` v2 for validation
 
@@ -49,26 +117,21 @@ No reason to change. FastAPI is:
 
 **Why Supabase over raw Cloud SQL:**
 - Gives you PostgreSQL (you know it)
-- Includes auth (see below)
-- Includes file storage (see below)
+- Includes auth
+- Includes file storage
 - Real-time subscriptions if you need them later
 - Row Level Security for multi-tenant safety
 - Generous free tier, predictable pricing
 - Dashboard for debugging
 
-**Why not a vector database (Pinecone, Weaviate)?** 
-You don't need one yet. PostgreSQL with `pgvector` extension (included in Supabase) handles similarity search fine for MVP scale. Don't add infrastructure complexity until you prove you need it.
+**Why not a vector database?** 
+You don't need one yet. PostgreSQL with `pgvector` extension (included in Supabase) handles similarity search fine for MVP scale.
 
-**⚠️ Hard-to-reverse decision:** Database choice is sticky. PostgreSQL is safe—it's boring and that's good. If you started with MongoDB or a pure vector DB, migration would hurt.
+**⚠️ Hard-to-reverse decision:** Database choice is sticky. PostgreSQL is safe—it's boring and that's good.
 
 ### File Storage: **Supabase Storage (backed by S3)**
 
-Consolidating with your database provider simplifies operations. Features you get:
-- Signed URLs for secure uploads/downloads
-- Image transformations (for thumbnails)
-- Integrates with Row Level Security
-
-Alternative: GCS is fine if you want to stay pure GCP. The integration work is similar.
+Consolidating with your database provider simplifies operations.
 
 ### Auth: **Supabase Auth (included)**
 
@@ -78,63 +141,35 @@ Alternative: GCS is fine if you want to stay pure GCP. The integration work is s
 - Not your differentiator
 
 Supabase Auth gives you:
-- Email/password, magic links, OAuth (Google is essential for students)
+- Email/password, magic links, OAuth (Google)
 - Session management
 - JWT tokens that work with your FastAPI backend
-- User management UI
 
-**Alternatives:**
-- *Clerk*: More polished UI, better if you want social login profiles. Costs more.
-- *Auth0*: Enterprise-grade, overkill for MVP.
-- *Roll your own*: Don't. Seriously.
+### AI/LLM Layer: **Anthropic Claude API (primary)**
 
-### AI/LLM Layer: **Anthropic Claude API (primary) + OpenAI (fallback)**
-
-**Why Claude as primary:**
+**Why Claude:**
 - Excellent at structured extraction (knowledge maps)
 - Strong at educational content generation
-- Vision capabilities for OCR built-in (no separate service needed!)
+- Vision capabilities for OCR built-in
 - Better at following complex instructions
-- Slightly lower cost at Sonnet tier
 
-**Architecture approach:**
-```
-User uploads PDF/image
-    → Claude Vision extracts text + structure
-    → Claude generates knowledge map JSON
-    → Stored in PostgreSQL
-    → Quiz generation pulls from knowledge map
-    → Claude evaluates responses
-```
-
-**Why have OpenAI as fallback:**
-- Redundancy if either API has issues
-- Some tasks (embeddings) might be cheaper with `text-embedding-3-small`
-- Students need reliability
-
-**Cost control strategies (detailed in section 6):**
+**Cost control strategies:**
 - Use Haiku for simple tasks (quiz answer evaluation)
+- Use Sonnet for complex tasks (knowledge map generation, quiz creation)
 - Cache aggressively
 - Batch operations where possible
 
 ### Deployment: **Cloud Run (backend) + Vercel (frontend)**
 
 **Why split:**
-- Vercel is unmatched for Next.js DX (preview deploys, edge functions, analytics)
+- Vercel is unmatched for Next.js DX
 - Cloud Run you already know for Python workloads
 - Both have generous free tiers
 - Both scale to zero (cost control)
 
-**Alternative:** Put everything on Cloud Run. Works fine, slightly more config for Next.js, but keeps you in one ecosystem.
+### Background Jobs: **Cloud Tasks → Cloud Run**
 
-### Background Jobs: **Cloud Run Jobs or Cloud Tasks**
-
-Document processing shouldn't block HTTP requests. Options:
-- *Cloud Tasks*: Queue that triggers Cloud Run endpoints. Simple, GCP-native.
-- *Cloud Run Jobs*: For longer processing. Can run up to 24 hours.
-- *Celery + Redis*: More complex but more control. Defer unless needed.
-
-For MVP, Cloud Tasks → Cloud Run endpoint is simplest.
+Knowledge map generation and material processing shouldn't block HTTP requests.
 
 ---
 
@@ -150,7 +185,7 @@ For MVP, Cloud Tasks → Cloud Run endpoint is simplest.
 │  └─────────────┘  └─────────────┘  └─────────────┘  └─────────────────────┘ │
 └─────────────────────────────────────────────────────────────────────────────┘
                                       │
-                                      │ HTTPS / WebSocket
+                                      │ HTTPS
                                       ▼
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                                   BACKEND                                    │
@@ -158,24 +193,30 @@ For MVP, Cloud Tasks → Cloud Run endpoint is simplest.
 │                                                                             │
 │  ┌──────────────────┐  ┌──────────────────┐  ┌──────────────────────────┐  │
 │  │   API Gateway    │  │  Auth Middleware │  │    Rate Limiting         │  │
-│  │   (FastAPI)      │  │  (Supabase JWT)  │  │    (Redis/Memory)        │  │
+│  │   (FastAPI)      │  │  (Supabase JWT)  │  │    (Memory)              │  │
 │  └────────┬─────────┘  └──────────────────┘  └──────────────────────────┘  │
 │           │                                                                 │
 │           ▼                                                                 │
 │  ┌─────────────────────────────────────────────────────────────────────┐   │
 │  │                         SERVICE LAYER                                │   │
 │  │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌────────────┐  │   │
-│  │  │  Document   │  │  Knowledge  │  │    Quiz     │  │    Gap     │  │   │
-│  │  │  Service    │  │   Service   │  │   Service   │  │  Analyzer  │  │   │
+│  │  │  Space      │  │  Knowledge  │  │    Quiz     │  │    Gap     │  │   │
+│  │  │  Service    │  │   Service   │  │   Service   │  │   Engine   │  │   │
 │  │  └─────────────┘  └─────────────┘  └─────────────┘  └────────────┘  │   │
+│  │                                                                      │   │
+│  │  ┌───────────────────────────────────────────────────────────────┐  │   │
+│  │  │              UNDERSTANDING STATE TRACKER                       │  │   │
+│  │  │  (Core IP: aggregates all signals into mastery estimates)     │  │   │
+│  │  └───────────────────────────────────────────────────────────────┘  │   │
 │  └─────────────────────────────────────────────────────────────────────┘   │
 │           │                                                                 │
 │           ▼                                                                 │
 │  ┌─────────────────────────────────────────────────────────────────────┐   │
 │  │                         AI PIPELINE                                  │   │
 │  │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌────────────┐  │   │
-│  │  │   Parser    │  │  Extractor  │  │  Generator  │  │  Evaluator │  │   │
-│  │  │ (PDF/Image) │  │ (Knowledge) │  │   (Quiz)    │  │ (Response) │  │   │
+│  │  │  Knowledge  │  │    Quiz     │  │  Response   │  │    Gap     │  │   │
+│  │  │    Map      │  │  Generator  │  │  Evaluator  │  │  Analyzer  │  │   │
+│  │  │  Generator  │  │             │  │             │  │            │  │   │
 │  │  └─────────────┘  └─────────────┘  └─────────────┘  └────────────┘  │   │
 │  └─────────────────────────────────────────────────────────────────────┘   │
 └─────────────────────────────────────────────────────────────────────────────┘
@@ -183,10 +224,9 @@ For MVP, Cloud Tasks → Cloud Run endpoint is simplest.
          ▼                      ▼                           ▼
 ┌─────────────────┐  ┌─────────────────────┐  ┌─────────────────────────────┐
 │  Supabase       │  │   Cloud Tasks       │  │      Claude API             │
-│  Storage        │  │   (Job Queue)       │  │      (+ OpenAI fallback)    │
+│  Storage        │  │   (Job Queue)       │  │                             │
 │  (Files)        │  │                     │  │                             │
 └─────────────────┘  └─────────────────────┘  └─────────────────────────────┘
-         │                      │
          │                      │
          ▼                      ▼
 ┌─────────────────────────────────────────────────────────────────────────────┐
@@ -198,55 +238,75 @@ For MVP, Cloud Tasks → Cloud Run endpoint is simplest.
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
-### Core User Journey: Syllabus Upload → Knowledge Map
+### Core User Journey: Topic → Knowledge Map → Learning
 
 ```
-┌──────────┐     ┌──────────┐     ┌──────────┐     ┌──────────┐     ┌──────────┐
-│  User    │     │ Frontend │     │ Backend  │     │  Queue   │     │   AI     │
-│          │     │          │     │          │     │          │     │ Pipeline │
-└────┬─────┘     └────┬─────┘     └────┬─────┘     └────┬─────┘     └────┬─────┘
-     │                │                │                │                │
-     │ Upload PDF     │                │                │                │
-     │───────────────>│                │                │                │
-     │                │                │                │                │
-     │                │ POST /documents│                │                │
-     │                │───────────────>│                │                │
-     │                │                │                │                │
-     │                │                │ Store file     │                │
-     │                │                │ (Supabase)     │                │
-     │                │                │                │                │
-     │                │                │ Queue job      │                │
-     │                │                │───────────────>│                │
-     │                │                │                │                │
-     │                │  202 Accepted  │                │                │
-     │                │<───────────────│                │                │
-     │                │                │                │                │
-     │  "Processing"  │                │                │                │
-     │<───────────────│                │                │                │
-     │                │                │                │ Process job    │
-     │                │                │                │───────────────>│
-     │                │                │                │                │
-     │                │                │                │  1. Fetch PDF  │
-     │                │                │                │  2. Claude     │
-     │                │                │                │     Vision     │
-     │                │                │                │  3. Extract    │
-     │                │                │                │     structure  │
-     │                │                │                │  4. Generate   │
-     │                │                │                │     knowledge  │
-     │                │                │                │     map        │
-     │                │                │                │                │
-     │                │                │  Store results │                │
-     │                │                │<───────────────│                │
-     │                │                │                │                │
-     │                │ Poll/Subscribe │                │                │
-     │                │───────────────>│                │                │
-     │                │                │                │                │
-     │                │  Knowledge Map │                │                │
-     │                │<───────────────│                │                │
-     │                │                │                │                │
-     │  Display Map   │                │                │                │
-     │<───────────────│                │                │                │
-     │                │                │                │                │
+┌──────────┐     ┌──────────┐     ┌──────────┐     ┌──────────┐
+│  User    │     │ Frontend │     │ Backend  │     │   AI     │
+│          │     │          │     │          │     │ Pipeline │
+└────┬─────┘     └────┬─────┘     └────┬─────┘     └────┬─────┘
+     │                │                │                │
+     │ "I want to     │                │                │
+     │  learn X"      │                │                │
+     │───────────────>│                │                │
+     │                │                │                │
+     │                │ POST /spaces   │                │
+     │                │ {topic, goal}  │                │
+     │                │───────────────>│                │
+     │                │                │                │
+     │                │                │ Generate map   │
+     │                │                │───────────────>│
+     │                │                │                │
+     │                │                │  Claude:       │
+     │                │                │  - Core topics │
+     │                │                │  - Dependencies│
+     │                │                │  - Sequence    │
+     │                │                │  - Difficulty  │
+     │                │                │                │
+     │                │                │<───────────────│
+     │                │                │                │
+     │                │  Knowledge Map │                │
+     │                │<───────────────│                │
+     │                │                │                │
+     │  Display Map   │                │                │
+     │<───────────────│                │                │
+     │                │                │                │
+     │ Start Quiz     │                │                │
+     │───────────────>│                │                │
+     │                │                │                │
+     │                │ GET /quiz      │                │
+     │                │ (diagnostic)   │                │
+     │                │───────────────>│                │
+     │                │                │                │
+     │                │                │ Generate Qs    │
+     │                │                │───────────────>│
+     │                │                │                │
+     │                │  Quiz          │                │
+     │                │<───────────────│                │
+     │                │                │                │
+     │  Take Quiz     │                │                │
+     │<───────────────│                │                │
+     │                │                │                │
+     │ Submit Answers │                │                │
+     │───────────────>│                │                │
+     │                │                │                │
+     │                │ POST /responses│                │
+     │                │───────────────>│                │
+     │                │                │                │
+     │                │                │ Evaluate       │
+     │                │                │───────────────>│
+     │                │                │                │
+     │                │                │ Update mastery │
+     │                │                │ Identify gaps  │
+     │                │                │                │
+     │                │  Results +     │                │
+     │                │  Updated Map   │                │
+     │                │<───────────────│                │
+     │                │                │                │
+     │  See progress, │                │                │
+     │  gaps, next    │                │                │
+     │  steps         │                │                │
+     │<───────────────│                │                │
 ```
 
 ---
@@ -255,224 +315,277 @@ For MVP, Cloud Tasks → Cloud Run endpoint is simplest.
 
 | Component | Decision | Reasoning |
 |-----------|----------|-----------|
-| **Authentication** | 🛒 BUY (Supabase Auth) | Security-critical, solved problem, not differentiating |
-| **Database hosting** | 🛒 BUY (Supabase) | Ops burden not worth it for MVP |
+| **Authentication** | 🛒 BUY (Supabase Auth) | Security-critical, solved problem |
+| **Database hosting** | 🛒 BUY (Supabase) | Ops burden not worth it |
 | **File storage** | 🛒 BUY (Supabase Storage) | Commodity infrastructure |
-| **PDF text extraction** | 🔨 BUILD (PyMuPDF + Claude Vision) | Claude Vision handles images/scans; PyMuPDF for clean PDFs. No need for separate OCR service |
-| **Knowledge extraction** | 🔨 BUILD (custom prompts) | **Core differentiator**—your prompt engineering and schema design IS the product |
-| **Quiz generation** | 🔨 BUILD (custom prompts) | Core differentiator |
-| **Gap analysis** | 🔨 BUILD (custom logic + LLM) | Core differentiator |
-| **Email/notifications** | 🛒 BUY (Resend or Supabase) | Start with transactional only, don't build |
-| **Analytics** | 🛒 BUY (Vercel Analytics + PostHog) | Free tiers are sufficient |
-| **Error monitoring** | 🛒 BUY (Sentry) | Essential, generous free tier |
-| **LLM observability** | 🛒 BUY (Langfuse or Helicone) | Critical for debugging AI issues, cost tracking |
-
-### Detailed Build Decisions
-
-**PDF/Image Processing:**
-```python
-# Your processing logic (simplified)
-async def process_document(file_path: str, file_type: str) -> str:
-    if file_type == "application/pdf":
-        # Try PyMuPDF first (fast, free)
-        text = extract_with_pymupdf(file_path)
-        if is_mostly_text(text):  # >80% extractable
-            return text
-        # Fall back to Claude Vision for scanned PDFs
-        return await extract_with_claude_vision(file_path)
-    
-    elif file_type.startswith("image/"):
-        # Always use Claude Vision for images
-        return await extract_with_claude_vision(file_path)
-    
-    else:  # Plain text
-        return read_file(file_path)
-```
-
-This hybrid approach saves money (PyMuPDF is free) while handling scanned documents gracefully.
+| **Knowledge map generation** | 🔨 BUILD (custom prompts) | **Core differentiator** |
+| **Understanding state tracker** | 🔨 BUILD (custom logic) | **Core differentiator** |
+| **Quiz generation** | 🔨 BUILD (custom prompts) | **Core differentiator** |
+| **Gap analysis** | 🔨 BUILD (custom logic + LLM) | **Core differentiator** |
+| **PDF parsing** | 🔨 BUILD (PyMuPDF + Claude Vision) | For optional material uploads |
+| **Analytics** | 🛒 BUY (PostHog) | Free tier sufficient |
+| **Error monitoring** | 🛒 BUY (Sentry) | Essential, free tier |
+| **LLM observability** | 🛒 BUY (Langfuse) | Critical for debugging AI |
 
 ---
 
 ## 4. Data Model
 
+The data model supports the general learner MVP while anticipating professionals and students. Key design decisions:
+
+- **Spaces** are topic-first, not document-first
+- **Knowledge maps** can be AI-generated or document-sourced
+- **Assessment signals** are polymorphic—quizzes, self-assessment, and future signals all feed the same mastery calculation
+- **Gaps** are first-class entities with priority
+
 ### Entity Relationship Diagram
 
 ```
-┌─────────────────┐       ┌─────────────────────┐
-│     users       │       │       spaces        │
-├─────────────────┤       ├─────────────────────┤
-│ id (PK)         │───┐   │ id (PK)             │
-│ email           │   │   │ user_id (FK)        │──┐
-│ name            │   └──>│ name                │  │
-│ created_at      │       │ subject             │  │
-│ settings (JSON) │       │ semester            │  │
-└─────────────────┘       │ created_at          │  │
-                          │ settings (JSON)     │  │
-                          └─────────────────────┘  │
-                                    │              │
-                 ┌──────────────────┴──────────────┤
-                 │                                 │
-                 ▼                                 │
-┌─────────────────────────────────────┐           │
-│            documents                 │           │
-├─────────────────────────────────────┤           │
-│ id (PK)                             │           │
-│ space_id (FK)                       │<──────────┘
-│ type (syllabus|material|test)       │
-│ original_filename                   │
-│ storage_path                        │
-│ mime_type                           │
-│ extracted_text                      │
-│ processing_status                   │
-│ processed_at                        │
-│ created_at                          │
-│ metadata (JSON)                     │
-└─────────────────────────────────────┘
-                 │
-                 │ (syllabus documents generate)
-                 ▼
-┌─────────────────────────────────────┐
-│          knowledge_maps             │
-├─────────────────────────────────────┤
-│ id (PK)                             │
-│ space_id (FK)                       │
-│ document_id (FK) (source syllabus)  │
-│ version                             │
-│ created_at                          │
-│ is_active                           │
-└─────────────────────────────────────┘
-                 │
-                 │ (contains many)
-                 ▼
-┌─────────────────────────────────────┐
-│            topics                   │
-├─────────────────────────────────────┤
-│ id (PK)                             │
-│ knowledge_map_id (FK)               │
-│ name                                │
-│ description                         │
-│ sequence_order                      │
-│ estimated_date (from syllabus)      │
-│ is_milestone                        │
-│ parent_topic_id (FK, self-ref)      │◄───┐
-│ difficulty_level                    │    │
-│ metadata (JSON)                     │────┘
-└─────────────────────────────────────┘
-                 │
-    ┌────────────┴────────────┐
-    │                         │
-    ▼                         ▼
-┌─────────────────┐   ┌─────────────────────────┐
-│topic_dependencies│  │    topic_mastery        │
-├─────────────────┤   ├─────────────────────────┤
-│ id (PK)         │   │ id (PK)                 │
-│ topic_id (FK)   │   │ user_id (FK)            │
-│ depends_on (FK) │   │ topic_id (FK)           │
-│ strength        │   │ mastery_level (0-100)   │
-└─────────────────┘   │ confidence              │
-                      │ last_assessed_at        │
-                      │ assessment_count        │
-                      │ is_gap                  │
-                      │ gap_priority            │
-                      └─────────────────────────┘
+┌─────────────────────────────┐       ┌─────────────────────────────────┐
+│          users              │       │            spaces               │
+├─────────────────────────────┤       ├─────────────────────────────────┤
+│ id (PK)                     │───┐   │ id (PK)                         │
+│ email                       │   │   │ user_id (FK)                    │──┐
+│ name                        │   └──>│ name                            │  │
+│ created_at                  │       │ context_type (enum)             │  │
+│ settings (JSONB)            │       │ topic (text) ← NEW              │  │
+└─────────────────────────────┘       │ goal (text)                     │  │
+                                      │ timeline_end (date, optional)   │  │
+                                      │ created_at                      │  │
+                                      │ settings (JSONB)                │  │
+                                      └─────────────────────────────────┘  │
+                                                    │                      │
+context_type enum:                   ┌──────────────┴──────────────────────┤
+ - exploratory (MVP)                 │                                     │
+ - professional (future)             │                                     │
+ - academic (future)                 ▼                                     │
+                              ┌─────────────────────────────────┐          │
+                              │          documents              │          │
+                              ├─────────────────────────────────┤          │
+                              │ id (PK)                         │          │
+                              │ space_id (FK)                   │<─────────┘
+                              │ document_type (enum)            │
+                              │ original_filename               │
+                              │ storage_path                    │
+                              │ extracted_text                  │
+                              │ processing_status               │
+                              │ created_at                      │
+                              │ metadata (JSONB)                │
+                              └─────────────────────────────────┘
+                                              │
+document_type enum:                           │ (optional: enriches map)
+ - article                                    │
+ - book_excerpt                               ▼
+ - video_notes                 ┌─────────────────────────────────┐
+ - self_authored               │        knowledge_maps           │
+ - syllabus (future)           ├─────────────────────────────────┤
+ - job_description (future)    │ id (PK)                         │
+                               │ space_id (FK)                   │
+                               │ source_type (enum) ← NEW        │
+                               │ source_document_id (FK, nullable)│
+                               │ version                         │
+                               │ is_active                       │
+                               │ created_at                      │
+                               └─────────────────────────────────┘
+                                              │
+source_type enum:                             │
+ - ai_generated (MVP)                         │ (contains many)
+ - document_extracted (future)                ▼
+ - user_created (future)      ┌─────────────────────────────────┐
+                              │           topics                │
+                              ├─────────────────────────────────┤
+                              │ id (PK)                         │
+                              │ knowledge_map_id (FK)           │
+                              │ parent_topic_id (FK, self-ref)  │◄───┐
+                              │ name                            │    │
+                              │ description                     │    │
+                              │ learning_objectives (text[])    │    │
+                              │ sequence_order                  │    │
+                              │ difficulty_level (1-5)          │    │
+                              │ estimated_hours (optional)      │    │
+                              │ metadata (JSONB)                │────┘
+                              └─────────────────────────────────┘
+                                              │
+                       ┌──────────────────────┼──────────────────────┐
+                       │                      │                      │
+                       ▼                      ▼                      ▼
+        ┌─────────────────────┐  ┌─────────────────────┐  ┌─────────────────────┐
+        │ topic_dependencies  │  │   topic_mastery     │  │        gaps         │
+        ├─────────────────────┤  ├─────────────────────┤  ├─────────────────────┤
+        │ id (PK)             │  │ id (PK)             │  │ id (PK)             │
+        │ topic_id (FK)       │  │ user_id (FK)        │  │ user_id (FK)        │
+        │ depends_on_id (FK)  │  │ topic_id (FK)       │  │ topic_id (FK)       │
+        │ strength (enum)     │  │ mastery_level (0-100)│ │ priority (1-10)     │
+        └─────────────────────┘  │ confidence (0-1)    │  │ identified_at       │
+                                 │ last_assessed_at    │  │ resolved_at         │
+dependency_strength enum:        │ self_reported (0-100)│ │ source_event_id (FK)│
+ - required                      │ UNIQUE(user,topic)  │  │ misconception       │
+ - helpful                       └─────────────────────┘  │ remediation         │
+ - related                                ▲               └─────────────────────┘
+                                          │
+                                          │ (updates mastery)
+                                          │
+                              ┌───────────┴───────────────────┐
+                              │      assessment_events        │
+                              ├───────────────────────────────┤
+                              │ id (PK)                       │
+                              │ user_id (FK)                  │
+                              │ topic_id (FK)                 │
+                              │ event_type (enum)             │
+                              │ signal_strength (0-100)       │
+                              │ is_positive (boolean)         │
+                              │ source_id (UUID, polymorphic) │
+                              │ ai_analysis (JSONB)           │
+                              │ created_at                    │
+                              └───────────────────────────────┘
 
-┌─────────────────────────────────────┐
-│            quizzes                  │
-├─────────────────────────────────────┤
-│ id (PK)                             │
-│ space_id (FK)                       │
-│ user_id (FK)                        │
-│ quiz_type (practice|diagnostic)     │
-│ target_topics (FK[])                │
-│ created_at                          │
-│ completed_at                        │
-│ overall_score                       │
-└─────────────────────────────────────┘
-                 │
-                 ▼
-┌─────────────────────────────────────┐
-│          quiz_questions             │
-├─────────────────────────────────────┤
-│ id (PK)                             │
-│ quiz_id (FK)                        │
-│ topic_id (FK)                       │
-│ question_type (mcq|short|explain)   │
-│ question_text                       │
-│ options (JSON, for MCQ)             │
-│ correct_answer                      │
-│ difficulty                          │
-│ sequence_order                      │
-└─────────────────────────────────────┘
-                 │
-                 ▼
-┌─────────────────────────────────────┐
-│          quiz_responses             │
-├─────────────────────────────────────┤
-│ id (PK)                             │
-│ question_id (FK)                    │
-│ user_answer                         │
-│ is_correct                          │
-│ ai_evaluation (JSON)                │
-│ feedback                            │
-│ responded_at                        │
-└─────────────────────────────────────┘
+event_type enum:
+ - quiz_response (MVP)
+ - self_assessment (MVP)
+ - graded_test_question (future)
+ - interaction_signal (future)
 
-┌─────────────────────────────────────┐
-│          graded_tests               │
-├─────────────────────────────────────┤
-│ id (PK)                             │
-│ document_id (FK)                    │
-│ space_id (FK)                       │
-│ test_date                           │
-│ total_score                         │
-│ max_score                           │
-│ ai_analysis (JSON)                  │
-│ identified_gaps (topic_id[])        │
-└─────────────────────────────────────┘
+
+┌─────────────────────────────────┐
+│           quizzes               │
+├─────────────────────────────────┤
+│ id (PK)                         │
+│ space_id (FK)                   │
+│ user_id (FK)                    │
+│ quiz_type (enum)                │
+│ target_topic_ids (UUID[])       │
+│ created_at                      │
+│ completed_at                    │
+│ overall_score                   │
+└─────────────────────────────────┘
+
+quiz_type enum:
+ - diagnostic (initial assessment)
+ - practice (targeted learning)
+ - review (spaced repetition, future)
+
+              │
+              ▼
+┌─────────────────────────────────┐
+│       quiz_questions            │
+├─────────────────────────────────┤
+│ id (PK)                         │
+│ quiz_id (FK)                    │
+│ topic_id (FK)                   │
+│ question_type (enum)            │
+│ question_text                   │
+│ options (JSONB)                 │
+│ correct_answer                  │
+│ difficulty (1-5)                │
+│ reasoning_required              │
+│ sequence_order                  │
+└─────────────────────────────────┘
+
+question_type enum:
+ - mcq (MVP)
+ - short_answer (future)
+ - explanation (future)
+
+              │
+              ▼
+┌─────────────────────────────────┐
+│       quiz_responses            │
+├─────────────────────────────────┤
+│ id (PK)                         │
+│ question_id (FK)                │
+│ user_answer                     │
+│ is_correct                      │
+│ ai_evaluation (JSONB)           │
+│ feedback                        │
+│ responded_at                    │
+└─────────────────────────────────┘
+
+
+┌─────────────────────────────────┐
+│      self_assessments           │  ← NEW for general learners
+├─────────────────────────────────┤
+│ id (PK)                         │
+│ user_id (FK)                    │
+│ topic_id (FK)                   │
+│ confidence_level (0-100)        │
+│ notes (text, optional)          │
+│ created_at                      │
+└─────────────────────────────────┘
 ```
 
 ### Key Schema Decisions
 
-**1. Knowledge maps are versioned:**
+**1. Spaces are topic-first:**
 ```sql
--- When syllabus is re-uploaded or edited, create new version
--- Keep old version for history but mark inactive
-ALTER TABLE knowledge_maps ADD COLUMN version INT DEFAULT 1;
-ALTER TABLE knowledge_maps ADD COLUMN is_active BOOLEAN DEFAULT true;
-```
-
-**2. Topics support hierarchy (for complex subjects):**
-```sql
--- Self-referential for subtopics
--- "Calculus" → "Derivatives" → "Chain Rule"
-parent_topic_id UUID REFERENCES topics(id)
-```
-
-**3. Mastery is per-user, per-topic:**
-```sql
--- This is your core "progress" data
--- Updated after every quiz response
-CREATE TABLE topic_mastery (
-    user_id UUID REFERENCES users(id),
-    topic_id UUID REFERENCES topics(id),
-    mastery_level INT CHECK (mastery_level BETWEEN 0 AND 100),
-    -- ...
-    PRIMARY KEY (user_id, topic_id)
+CREATE TABLE spaces (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    context_type space_context NOT NULL DEFAULT 'exploratory',
+    topic TEXT NOT NULL,  -- "Quantum mechanics", "Machine learning", etc.
+    goal TEXT,            -- "Understand well enough to explain to others"
+    timeline_end DATE,    -- Optional: "I want to learn this by X"
+    created_at TIMESTAMPTZ DEFAULT now(),
+    settings JSONB DEFAULT '{}'::jsonb
 );
 ```
 
-**4. JSON columns for flexibility:**
+**2. Knowledge maps track their source:**
 ```sql
--- metadata, ai_evaluation, settings use JSONB
--- Lets you iterate on structure without migrations
--- PostgreSQL JSONB is queryable and indexable
-metadata JSONB DEFAULT '{}'::jsonb
+CREATE TYPE knowledge_map_source AS ENUM (
+    'ai_generated',        -- MVP: Claude generates from topic
+    'document_extracted',  -- Future: extracted from syllabus
+    'user_created'         -- Future: manual creation
+);
+
+CREATE TABLE knowledge_maps (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    space_id UUID REFERENCES spaces(id) ON DELETE CASCADE,
+    source_type knowledge_map_source NOT NULL DEFAULT 'ai_generated',
+    source_document_id UUID REFERENCES documents(id),
+    version INT DEFAULT 1,
+    is_active BOOLEAN DEFAULT true,
+    created_at TIMESTAMPTZ DEFAULT now()
+);
 ```
 
-**⚠️ Hard-to-reverse decision:** Your knowledge map schema (topics, dependencies) will shape your entire product. Spend time getting this right. Consider:
-- Can topics span multiple syllabi? (I'd say no for MVP—one syllabus = one knowledge map)
-- How granular? (Err toward more specific: "Solving quadratic equations" not "Algebra")
-- How do you handle syllabus updates mid-semester?
+**3. Self-assessment is a first-class signal:**
+```sql
+CREATE TABLE self_assessments (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
+    topic_id UUID REFERENCES topics(id) ON DELETE CASCADE,
+    confidence_level INT CHECK (confidence_level BETWEEN 0 AND 100),
+    notes TEXT,
+    created_at TIMESTAMPTZ DEFAULT now()
+);
+
+-- Self-assessments create assessment_events
+-- with event_type = 'self_assessment'
+```
+
+**4. Topics have learning objectives:**
+```sql
+-- For general learners, we need to be explicit about
+-- what "understanding this topic" means
+CREATE TABLE topics (
+    -- ...
+    learning_objectives TEXT[],  -- ["Explain X", "Apply Y to Z", "Distinguish A from B"]
+    estimated_hours NUMERIC(4,1), -- Optional time estimate
+    -- ...
+);
+```
+
+**5. Mastery includes self-reported confidence:**
+```sql
+CREATE TABLE topic_mastery (
+    -- ...
+    mastery_level INT DEFAULT 0,     -- Calculated from assessments
+    confidence NUMERIC(3,2) DEFAULT 0, -- Statistical confidence in estimate
+    self_reported INT,                -- Last self-assessment (0-100)
+    -- ...
+);
+```
 
 ---
 
@@ -480,320 +593,433 @@ metadata JSONB DEFAULT '{}'::jsonb
 
 ### Pipeline Architecture
 
+The key difference from the student flow: **knowledge maps are generated from topics, not extracted from documents.**
+
 ```
 ┌────────────────────────────────────────────────────────────────────────────┐
 │                           AI PIPELINE COMPONENTS                            │
 └────────────────────────────────────────────────────────────────────────────┘
 
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│ STAGE 1: DOCUMENT INGESTION                                                 │
+│ STAGE 1: KNOWLEDGE MAP GENERATION (from topic)                  ← NEW FLOW │
 │                                                                             │
 │  ┌─────────────┐    ┌─────────────┐    ┌─────────────┐    ┌─────────────┐  │
-│  │   Upload    │───>│   Parse     │───>│  Normalize  │───>│   Store     │  │
-│  │  Handler    │    │  (PyMuPDF/  │    │   Text      │    │  (Supabase) │  │
-│  │             │    │   Vision)   │    │             │    │             │  │
+│  │   Parse     │───>│  Generate   │───>│   Infer     │───>│   Store     │  │
+│  │   Topic &   │    │   Topics    │    │Dependencies │    │   Map       │  │
+│  │   Goal      │    │             │    │             │    │             │  │
 │  └─────────────┘    └─────────────┘    └─────────────┘    └─────────────┘  │
 │                                                                             │
-│  Models: Claude Haiku (OCR) - cheap, fast for text extraction               │
+│  Input: "I want to understand quantum mechanics"                            │
+│  Output: Structured knowledge map with ~10-30 topics                        │
+│                                                                             │
+│  Models: Claude Sonnet - complex reasoning required                         │
 └─────────────────────────────────────────────────────────────────────────────┘
                                     │
                                     ▼
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│ STAGE 2: KNOWLEDGE EXTRACTION (Syllabus Only)                               │
-│                                                                             │
-│  ┌─────────────┐    ┌─────────────┐    ┌─────────────┐    ┌─────────────┐  │
-│  │  Structure  │───>│   Topic     │───>│ Dependency  │───>│  Timeline   │  │
-│  │  Detection  │    │ Extraction  │    │  Inference  │    │  Mapping    │  │
-│  │             │    │             │    │             │    │             │  │
-│  └─────────────┘    └─────────────┘    └─────────────┘    └─────────────┘  │
-│                                                                             │
-│  Models: Claude Sonnet - best balance of quality/cost for complex reasoning │
-│                                                                             │
-│  Output: Structured JSON matching your topics schema                        │
-└─────────────────────────────────────────────────────────────────────────────┘
-                                    │
-                                    ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│ STAGE 3: MATERIAL INTEGRATION (Course materials, worksheets)                │
-│                                                                             │
-│  ┌─────────────┐    ┌─────────────┐    ┌─────────────┐                     │
-│  │   Match to  │───>│   Enrich    │───>│   Update    │                     │
-│  │   Topics    │    │   Topics    │    │  Knowledge  │                     │
-│  │             │    │ (examples,  │    │    Map      │                     │
-│  │             │    │  context)   │    │             │                     │
-│  └─────────────┘    └─────────────┘    └─────────────┘                     │
-│                                                                             │
-│  Models: Claude Haiku - simpler classification task                         │
-└─────────────────────────────────────────────────────────────────────────────┘
-                                    │
-                                    ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│ STAGE 4: ASSESSMENT (Graded tests → Gap identification)                     │
-│                                                                             │
-│  ┌─────────────┐    ┌─────────────┐    ┌─────────────┐    ┌─────────────┐  │
-│  │   Extract   │───>│   Map to    │───>│  Analyze    │───>│   Update    │  │
-│  │  Q&A Pairs  │    │   Topics    │    │   Errors    │    │  Mastery    │  │
-│  │             │    │             │    │             │    │   + Gaps    │  │
-│  └─────────────┘    └─────────────┘    └─────────────┘    └─────────────┘  │
-│                                                                             │
-│  Models: Claude Sonnet - nuanced understanding of student errors            │
-└─────────────────────────────────────────────────────────────────────────────┘
-                                    │
-                                    ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│ STAGE 5: QUIZ GENERATION                                                    │
+│ STAGE 2: DIAGNOSTIC QUIZ GENERATION                                         │
 │                                                                             │
 │  ┌─────────────┐    ┌─────────────┐    ┌─────────────┐                     │
 │  │   Select    │───>│  Generate   │───>│  Validate   │                     │
-│  │   Topics    │    │  Questions  │    │  Quality    │                     │
-│  │ (gap-based) │    │             │    │             │                     │
+│  │   Spanning  │    │  Questions  │    │  Quality    │                     │
+│  │   Topics    │    │             │    │             │                     │
 │  └─────────────┘    └─────────────┘    └─────────────┘                     │
 │                                                                             │
-│  Models: Claude Sonnet - quality questions require reasoning                │
+│  Goal: Quickly assess existing knowledge across the map                     │
+│  Strategy: 1-2 questions per major topic area, varying difficulty          │
 │                                                                             │
-│  Strategy: Generate 5-7 questions, validate, cache for reuse               │
+│  Models: Claude Sonnet                                                      │
 └─────────────────────────────────────────────────────────────────────────────┘
                                     │
                                     ▼
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│ STAGE 6: RESPONSE EVALUATION                                                │
+│ STAGE 3: RESPONSE EVALUATION + MASTERY UPDATE                               │
 │                                                                             │
 │  ┌─────────────┐    ┌─────────────┐    ┌─────────────┐    ┌─────────────┐  │
-│  │   Receive   │───>│  Evaluate   │───>│  Generate   │───>│   Update    │  │
-│  │   Answer    │    │ Correctness │    │  Feedback   │    │  Mastery    │  │
+│  │   Receive   │───>│  Evaluate   │───>│   Create    │───>│  Recalc     │  │
+│  │   Answer    │    │ Correctness │    │  Assessment │    │  Mastery    │  │
+│  │             │    │             │    │   Event     │    │             │  │
 │  └─────────────┘    └─────────────┘    └─────────────┘    └─────────────┘  │
 │                                                                             │
-│  Models: Claude Haiku - MCQ is simple; Sonnet for open-ended               │
+│  Models: Claude Haiku for MCQ (simple); Sonnet for open-ended (future)     │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ STAGE 4: GAP IDENTIFICATION & PRIORITIZATION                                │
+│                                                                             │
+│  ┌─────────────┐    ┌─────────────┐    ┌─────────────┐                     │
+│  │  Identify   │───>│  Prioritize │───>│  Generate   │                     │
+│  │   Gaps      │    │  by Goal &  │    │ Remediation │                     │
+│  │             │    │ Dependencies│    │    Hint     │                     │
+│  └─────────────┘    └─────────────┘    └─────────────┘                     │
+│                                                                             │
+│  Priority factors:                                                          │
+│   - Is this foundational? (blocks other topics)                            │
+│   - User's stated goal alignment                                           │
+│   - Current mastery vs. target                                             │
+│                                                                             │
+│  Models: Mostly algorithmic; LLM for remediation suggestions                │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ STAGE 5: TARGETED QUIZ GENERATION                                           │
+│                                                                             │
+│  ┌─────────────┐    ┌─────────────┐    ┌─────────────┐                     │
+│  │   Select    │───>│  Generate   │───>│  Validate   │                     │
+│  │   Gap       │    │  Questions  │    │  North Star │                     │
+│  │   Topics    │    │             │    │             │                     │
+│  └─────────────┘    └─────────────┘    └─────────────┘                     │
+│                                                                             │
+│  Questions must:                                                            │
+│   - Test understanding, not recall                                         │
+│   - Target edge of current knowledge                                       │
+│   - Surface misconceptions                                                 │
+│                                                                             │
+│  Models: Claude Sonnet                                                      │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ STAGE 6: MATERIAL INTEGRATION (Optional)                                    │
+│                                                                             │
+│  ┌─────────────┐    ┌─────────────┐    ┌─────────────┐                     │
+│  │   Parse     │───>│   Match to  │───>│   Enrich    │                     │
+│  │   Document  │    │   Topics    │    │   Topics    │                     │
+│  │             │    │             │    │             │                     │
+│  └─────────────┘    └─────────────┘    └─────────────┘                     │
+│                                                                             │
+│  User uploads article/notes → enriches existing knowledge map               │
+│  Can also suggest new topics to add                                        │
+│                                                                             │
+│  Models: Claude Haiku for classification                                    │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
-### Example Prompts (Your Core IP)
+### Example Prompts (Core IP)
 
-**Knowledge Extraction Prompt (Stage 2):**
+**Knowledge Map Generation (Stage 1):**
 ```python
-SYLLABUS_EXTRACTION_PROMPT = """
-You are analyzing a course syllabus to extract a structured knowledge map.
+KNOWLEDGE_MAP_GENERATION_PROMPT = """
+You are helping someone build a structured learning path for a topic they want to understand deeply.
 
-<syllabus>
-{extracted_text}
-</syllabus>
+<learning_request>
+Topic: {topic}
+Goal: {goal}
+Current background: {background}  # Optional: what they already know
+Time available: {time_commitment}  # Optional: "a few hours a week"
+</learning_request>
 
-Extract the following as JSON:
+Generate a comprehensive knowledge map as JSON:
 
-1. **topics**: Array of learning topics/concepts
+1. **topics**: Array of concepts to learn (aim for 15-30 topics)
    - name: Clear, specific topic name
-   - description: What students should understand
-   - sequence_order: Order in the course (1, 2, 3...)
-   - estimated_week: When this is covered (week number)
-   - is_milestone: Is this a major exam/project? (boolean)
-   - difficulty_level: 1-5 scale
+   - description: What understanding this topic means (2-3 sentences)
+   - learning_objectives: Array of 2-4 specific things they should be able to do
+     (use verbs: "explain", "apply", "distinguish", "predict", "analyze")
+   - sequence_order: Suggested learning order (1, 2, 3...)
+   - difficulty_level: 1-5 scale relative to the overall topic
+   - estimated_hours: Rough time to achieve basic understanding
    - parent_topic: Name of parent topic if this is a subtopic, null otherwise
 
 2. **dependencies**: Array of topic relationships
    - topic: Topic name
    - depends_on: Array of prerequisite topic names
-   - strength: How strong the dependency is (required|helpful|related)
+   - strength: required (must know first) | helpful (easier if known) | related (connected but independent)
 
-3. **timeline**: Key dates
-   - date: ISO date string
-   - event: What happens (exam, project due, etc.)
-   - related_topics: Array of relevant topic names
+3. **suggested_starting_points**: Array of 2-3 topic names
+   - Good entry points based on typical prior knowledge
+   - Should have minimal prerequisites
 
-Be specific with topic names. "Solving quadratic equations by factoring" is better 
-than "Algebra". Extract ALL assessments as milestones.
+Design principles:
+- Each topic should be learnable in 1-4 hours of focused study
+- Topics should be specific enough to assess ("Wave-particle duality" not "Quantum weirdness")
+- Learning objectives should be measurable through questions
+- Include both foundational concepts and interesting applications
+- Consider common misconceptions that should be addressed
 
 Respond ONLY with valid JSON matching this schema:
 {schema}
 """
 ```
 
-**Gap Analysis Prompt (Stage 4):**
+**Diagnostic Quiz Generation (Stage 2):**
 ```python
-GAP_ANALYSIS_PROMPT = """
-Analyze this graded test to identify knowledge gaps.
-
-<test_content>
-{extracted_test_content}
-</test_content>
+DIAGNOSTIC_QUIZ_PROMPT = """
+Generate a diagnostic quiz to assess someone's existing knowledge of a topic.
 
 <knowledge_map>
 {knowledge_map_json}
 </knowledge_map>
 
-For each question the student got wrong or partially wrong:
-1. Identify which topic(s) from the knowledge map it tests
-2. Analyze the specific misconception or gap
-3. Rate severity (critical|moderate|minor)
-4. Suggest what to review
+<context>
+Topic: {topic}
+Goal: {goal}
+</context>
+
+Generate {num_questions} multiple-choice questions that:
+
+1. **Span the knowledge map**: Cover different areas, not just one subtopic
+2. **Vary in difficulty**: Mix easy (1-2), medium (3), and hard (4-5) questions
+3. **Reveal understanding patterns**: Help identify which areas need work
+4. **Test concepts, not trivia**: Focus on understanding, not memorization
+
+For each question:
+- question_text: Clear question testing a concept
+- topic_id: Which topic this assesses
+- options: Array of 4 options (A, B, C, D)
+- correct_answer: The correct option letter
+- difficulty: 1-5
+- diagnostic_value: What getting this right/wrong tells us about understanding
+
+Distribution:
+- 30% foundational (prerequisites, basics)
+- 50% core concepts (main topics)
+- 20% advanced/application (synthesis, edge cases)
+
+Respond ONLY with valid JSON.
+"""
+```
+
+**Targeted Quiz Generation (Stage 5) — North Star Aligned:**
+```python
+TARGETED_QUIZ_PROMPT = """
+Generate quiz questions that test genuine understanding, not just recall.
+
+<topic>
+Name: {topic_name}
+Description: {topic_description}
+Learning objectives: {learning_objectives}
+</topic>
+
+<user_context>
+Current mastery: {mastery_level}/100
+Known misconceptions: {known_misconceptions}
+Self-reported confidence: {self_reported_confidence}
+</user_context>
+
+<knowledge_context>
+Prerequisites: {prerequisite_topics}
+This enables: {dependent_topics}
+</knowledge_context>
+
+Generate {num_questions} multiple-choice questions following these principles:
+
+1. **Test understanding, not recall**
+   - Ask "why does X happen" not "what is X"
+   - Ask "what would change if" not "list the properties of"
+   - Ask "which explanation is correct" not "which term matches"
+
+2. **Target the edge of knowledge**
+   - Current mastery is {mastery_level}%
+   - Questions should be challenging but achievable
+   - Too easy = no learning signal; too hard = discouraging
+
+3. **Surface misconceptions**
+   - Wrong answers should be tempting if you have common misunderstandings
+   - Each distractor should represent a specific type of error
+
+4. **Require reasoning**
+   - The answer should not be obvious without thinking through the concept
+   - Pattern matching or keyword spotting should not work
+
+For each question:
+- question_text: Clear, specific question
+- options: Array of 4 options (A, B, C, D)
+- correct_answer: The correct option letter
+- difficulty: 1-5
+- tests_objective: Which learning objective this assesses
+- reasoning_required: What thinking process is needed
+- misconception_tested: What wrong answer B/C/D test for
+
+⚠️ QUALITY CHECK: Before including a question, ask:
+"Could someone answer this correctly just by recognizing keywords or patterns?"
+If yes, rewrite the question.
+
+Respond ONLY with valid JSON.
+"""
+```
+
+**Self-Assessment Processing:**
+```python
+SELF_ASSESSMENT_PROMPT = """
+A learner has self-assessed their understanding of a topic. Help calibrate this.
+
+<topic>
+Name: {topic_name}
+Learning objectives: {learning_objectives}
+</topic>
+
+<self_assessment>
+Confidence level: {confidence_level}/100
+Notes: {notes}
+</self_assessment>
+
+<quiz_history>
+Recent quiz performance on this topic:
+{quiz_performance_summary}
+</quiz_history>
+
+Analyze the calibration between self-reported confidence and demonstrated performance.
 
 Return JSON:
 {
-  "gaps": [
-    {
-      "topic_id": "uuid",
-      "topic_name": "string",
-      "misconception": "What the student seems to misunderstand",
-      "severity": "critical|moderate|minor",
-      "evidence": "Quote from test showing the error",
-      "remediation": "What to study/practice"
-    }
-  ],
-  "overall_assessment": "Brief summary of student's understanding"
+  "calibration": "overconfident" | "underconfident" | "well_calibrated",
+  "adjusted_estimate": 0-100,  // Your best estimate of actual mastery
+  "reasoning": "Brief explanation",
+  "suggested_action": "What they should do next",
+  "clarifying_questions": ["Optional questions to better assess understanding"]
 }
 """
 ```
 
-### Pipeline Implementation Pattern
+### Pipeline Implementation
 
 ```python
 # services/ai_pipeline.py
 
-from anthropic import Anthropic
-from typing import Literal
-
 class AIPipeline:
     def __init__(self):
         self.client = Anthropic()
-        
-    async def run_stage(
+    
+    async def generate_knowledge_map(
         self,
-        stage: Literal["extract", "quiz_gen", "evaluate"],
-        input_data: dict,
-        model: str = "claude-sonnet-4-20250514"
+        topic: str,
+        goal: str,
+        background: str = None,
+        time_commitment: str = None
     ) -> dict:
-        """
-        Generic stage runner with:
-        - Retry logic
-        - Cost tracking
-        - Structured output validation
-        """
-        prompt = self._get_prompt(stage, input_data)
+        """Generate a knowledge map from a topic description."""
         
-        # Track token usage for cost monitoring
+        prompt = KNOWLEDGE_MAP_GENERATION_PROMPT.format(
+            topic=topic,
+            goal=goal,
+            background=background or "Not specified",
+            time_commitment=time_commitment or "Flexible",
+            schema=KNOWLEDGE_MAP_SCHEMA
+        )
+        
         response = await self.client.messages.create(
-            model=model,
+            model="claude-sonnet-4-20250514",
+            max_tokens=8192,  # Knowledge maps can be large
+            messages=[{"role": "user", "content": prompt}]
+        )
+        
+        self._log_usage("generate_knowledge_map", response.usage)
+        return self._parse_and_validate(response.content[0].text, "knowledge_map")
+    
+    async def generate_diagnostic_quiz(
+        self,
+        knowledge_map: dict,
+        topic: str,
+        goal: str,
+        num_questions: int = 10
+    ) -> list:
+        """Generate a diagnostic quiz spanning the knowledge map."""
+        
+        prompt = DIAGNOSTIC_QUIZ_PROMPT.format(
+            knowledge_map_json=json.dumps(knowledge_map),
+            topic=topic,
+            goal=goal,
+            num_questions=num_questions
+        )
+        
+        response = await self.client.messages.create(
+            model="claude-sonnet-4-20250514",
             max_tokens=4096,
             messages=[{"role": "user", "content": prompt}]
         )
         
-        # Log to observability (Langfuse/Helicone)
-        self._log_usage(stage, response.usage)
-        
-        # Parse and validate JSON response
-        return self._parse_response(stage, response.content[0].text)
+        questions = self._parse_and_validate(response.content[0].text, "quiz")
+        return [q for q in questions if self._validates_north_star(q)]
     
-    def _select_model(self, stage: str, complexity: str) -> str:
-        """Choose model based on task complexity and cost."""
-        model_map = {
-            ("extract_text", "any"): "claude-haiku-4-5-20251001",
-            ("extract_knowledge", "any"): "claude-sonnet-4-20250514",
-            ("evaluate", "mcq"): "claude-haiku-4-5-20251001",
-            ("evaluate", "open"): "claude-sonnet-4-20250514",
-            ("quiz_gen", "any"): "claude-sonnet-4-20250514",
+    async def evaluate_response(
+        self,
+        question: dict,
+        user_answer: str
+    ) -> dict:
+        """Evaluate a quiz response. Use Haiku for MCQ."""
+        
+        # MCQ is simple enough for Haiku
+        is_correct = user_answer.upper() == question["correct_answer"].upper()
+        
+        # For MCQ, we can determine correctness without LLM
+        # But we use LLM for feedback generation
+        if is_correct:
+            feedback = "Correct!"
+            signal_strength = 80 + (question["difficulty"] * 4)  # 84-100
+        else:
+            # Generate helpful feedback
+            feedback = await self._generate_feedback(question, user_answer)
+            signal_strength = max(0, 50 - (question["difficulty"] * 10))  # 0-40
+        
+        return {
+            "is_correct": is_correct,
+            "feedback": feedback,
+            "signal_strength": signal_strength,
+            "is_positive": is_correct
         }
-        return model_map.get((stage, complexity), "claude-sonnet-4-20250514")
+    
+    def _validates_north_star(self, question: dict) -> bool:
+        """Check if question aligns with 'understanding over recall' principle."""
+        
+        recall_phrases = [
+            "what is the definition",
+            "name the",
+            "list the",
+            "when was",
+            "who discovered",
+            "what year"
+        ]
+        question_lower = question["question_text"].lower()
+        
+        if any(phrase in question_lower for phrase in recall_phrases):
+            return False
+        
+        if not question.get("reasoning_required"):
+            return False
+        
+        return True
 ```
 
 ---
 
 ## 6. Cost Estimation Approach
 
-### Per-User Cost Model
+### Per-User Cost Model (General Learner)
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                        MONTHLY COST PER ACTIVE USER                         │
 └─────────────────────────────────────────────────────────────────────────────┘
 
-Assumptions:
-- 1 syllabus upload (beginning of semester)
-- 4 material uploads/month
-- 2 graded test uploads/month  
-- 20 quizzes taken/month (5 questions each = 100 questions)
-- 100 quiz responses evaluated/month
+Assumptions (General Learner):
+- 2 new spaces/month (new topics to learn)
+- 2 diagnostic quizzes/month (10 questions each)
+- 15 practice quizzes/month (5 questions each)
+- 90 quiz responses evaluated/month
+- 5 self-assessments/month
+- 1 material upload/month (optional)
 
 ┌────────────────────┬──────────────┬────────────┬──────────┬───────────────┐
 │ Operation          │ Model        │ Tokens/op  │ Ops/mo   │ Cost/mo       │
 ├────────────────────┼──────────────┼────────────┼──────────┼───────────────┤
-│ Syllabus extract   │ Sonnet       │ ~8K out    │ 0.25*    │ $0.12         │
-│ Material process   │ Haiku        │ ~2K out    │ 4        │ $0.08         │
-│ Test analysis      │ Sonnet       │ ~4K out    │ 2        │ $0.60         │
-│ Quiz generation    │ Sonnet       │ ~3K out    │ 5**      │ $0.45         │
-│ Response eval      │ Haiku        │ ~500 out   │ 100      │ $0.50         │
+│ Knowledge map gen  │ Sonnet       │ ~6K out    │ 2        │ $0.54         │
+│ Diagnostic quiz    │ Sonnet       │ ~3K out    │ 2        │ $0.27         │
+│ Practice quiz gen  │ Sonnet       │ ~2K out    │ 4*       │ $0.36         │
+│ Response eval      │ Haiku        │ ~300 out   │ 90       │ $0.27         │
+│ Self-assess calib  │ Haiku        │ ~500 out   │ 5        │ $0.03         │
+│ Material process   │ Haiku        │ ~2K out    │ 1        │ $0.02         │
 ├────────────────────┼──────────────┼────────────┼──────────┼───────────────┤
-│ TOTAL              │              │            │          │ ~$1.75/user   │
+│ TOTAL              │              │            │          │ ~$1.50/user   │
 └────────────────────┴──────────────┴────────────┴──────────┴───────────────┘
 
-* Amortized across ~4 months per semester
-** 20 quizzes but with caching, only ~5 new generations needed
+* 15 quizzes but with caching, only ~4 new generations needed
 
-Pricing used (as of late 2024):
+Pricing:
 - Claude Sonnet: $3/1M input, $15/1M output
 - Claude Haiku: $0.25/1M input, $1.25/1M output
-```
-
-### Cost Control Strategies
-
-**1. Model Selection by Task:**
-```python
-# Map task complexity to model
-MODEL_ROUTING = {
-    "ocr_extraction": "haiku",      # Simple text extraction
-    "mcq_evaluation": "haiku",      # Binary correct/incorrect
-    "knowledge_extraction": "sonnet", # Complex reasoning
-    "quiz_generation": "sonnet",     # Creative + accurate
-    "gap_analysis": "sonnet",        # Nuanced understanding
-}
-```
-
-**2. Aggressive Caching:**
-```python
-# Cache quiz questions by topic
-# If topic hasn't changed and we have 10+ questions, don't regenerate
-async def get_quiz_questions(topic_id: str, count: int) -> list:
-    cached = await cache.get(f"quiz_questions:{topic_id}")
-    if cached and len(cached) >= count:
-        return random.sample(cached, count)
-    
-    # Generate new questions, add to cache
-    new_questions = await ai_pipeline.generate_questions(topic_id, count=10)
-    await cache.set(f"quiz_questions:{topic_id}", new_questions, ttl=86400*7)
-    return new_questions[:count]
-```
-
-**3. Batch Processing:**
-```python
-# When processing multiple materials, batch into single API call
-async def process_materials_batch(materials: list[Document]) -> list:
-    combined_text = "\n---\n".join([m.extracted_text for m in materials])
-    # Single API call instead of N calls
-    result = await ai_pipeline.classify_materials_batch(combined_text)
-    return result
-```
-
-**4. Token Budgets:**
-```python
-# Hard limits per operation
-TOKEN_LIMITS = {
-    "syllabus_extraction": 10000,
-    "quiz_generation": 4000,
-    "response_evaluation": 1000,
-}
-
-# Per-user monthly budget
-USER_MONTHLY_BUDGET = 50000  # tokens
-```
-
-**5. Monitoring & Alerts:**
-```python
-# Track costs in real-time with Langfuse or custom
-@track_cost
-async def generate_quiz(topic_ids: list[str]) -> Quiz:
-    ...
-
-# Alert if user exceeds expected usage
-if user.monthly_token_usage > USER_MONTHLY_BUDGET * 0.8:
-    await notify_admin(f"User {user.id} at 80% budget")
 ```
 
 ### Infrastructure Costs (Monthly)
@@ -807,10 +1033,10 @@ if user.monthly_token_usage > USER_MONTHLY_BUDGET * 0.8:
 | Langfuse | Free/Hobby | $0-25 |
 | **Total Fixed** | | **~$55-100/mo** |
 
-At $1.75 AI cost per user + ~$75 fixed costs:
-- 50 users: $162/mo ($3.25/user)
-- 200 users: $425/mo ($2.12/user)
-- 1000 users: $1,825/mo ($1.83/user)
+At $1.50 AI cost per user + ~$75 fixed costs:
+- 10 users (you + friends): $90/mo
+- 50 users: $150/mo ($3/user)
+- 200 users: $375/mo ($1.88/user)
 
 ---
 
@@ -820,239 +1046,330 @@ At $1.75 AI cost per user + ~$75 fixed costs:
 
 | Feature | Include? | Reasoning |
 |---------|----------|-----------|
-| Account creation | ✅ Yes | Core requirement |
-| Spaces (per class) | ✅ Yes | Essential organization |
-| Syllabus upload (PDF/image/text) | ✅ Yes | Core value prop |
-| Knowledge map display | ✅ Yes | Core value prop |
-| Material uploads | ✅ Yes | Enriches knowledge map |
-| Graded test upload + gap ID | ✅ Yes | High value, differentiating |
-| Basic quizzes (MCQ) | ✅ Yes | Immediate value |
-| Progress dashboard | ✅ Yes | Shows value over time |
-| Google OAuth | ✅ Yes | Students expect it |
+| Account creation + Google OAuth | ✅ Yes | Core requirement |
+| Create space from topic | ✅ Yes | **Core flow** |
+| AI-generated knowledge map | ✅ Yes | **Core value prop** |
+| Diagnostic quiz | ✅ Yes | Establishes baseline |
+| Practice quizzes (MCQ) | ✅ Yes | Immediate value |
+| Self-assessment on topics | ✅ Yes | Key signal for general learners |
+| Mastery tracking + dashboard | ✅ Yes | Shows progress |
+| Gap identification | ✅ Yes | Core value prop |
+| Quiz targeting gaps | ✅ Yes | Closes the loop |
 
 ### What to Defer (and Why)
 
 | Feature | Why It's Tempting | Why to Defer |
 |---------|-------------------|--------------|
-| **Mobile app** | Students are on phones | PWA gives you 80% of mobile value. Native apps are 3x the maintenance. |
-| **Open-ended quiz responses** | More pedagogically valuable | Evaluation is harder, costs more. Start with MCQ, add later. |
-| **Parent dashboard** | Part of your vision | Different user, different needs. Nail student experience first. |
-| **Study schedule generation** | Feels "smart" | Complex to get right. Manual timeline from syllabus is enough for MVP. |
-| **Collaborative features** | Study groups are real | Multi-user is hard. Single-player first. |
-| **Advanced visualizations** | Knowledge graphs look cool | Simple list/timeline is fine. Don't bikeshed on D3.js. |
-| **Multiple choice answer explanations** | Better learning | Doubles generation cost. Add after you validate core. |
-| **Spaced repetition scheduling** | Proven effective | Requires more data to do well. V2 feature. |
-| **Integration with LMS (Canvas, etc.)** | Easier onboarding | API work is significant. Manual upload is fine for MVP. |
-| **Real-time progress updates** | Feels modern | Polling every 30s is fine. WebSockets add complexity. |
-| **Custom branding/white-label** | Future B2B play | Not relevant for consumer MVP. |
-| **Offline mode** | Students study anywhere | Service worker complexity not worth it yet. |
-| **Multi-language support** | Bigger market | i18n is a tax on every feature. English first. |
+| **Document uploads** | Enriches learning | Optional for MVP; topic-first is enough |
+| **Knowledge map editing** | Users might want control | Complex UX; see if AI maps are good enough |
+| **Open-ended questions** | Better signal | Evaluation is harder, costs more |
+| **Explanations/lessons** | Complete learning loop | Focus on assessment first; external resources exist |
+| **Mobile app** | Learn on the go | PWA is enough |
+| **Spaced repetition** | Proven effective | Need baseline data first |
+| **Professional context** | Part of vision | Different enough to defer |
+| **Student/syllabus context** | Part of vision | Need distribution first |
+| **Social/sharing** | Motivation | Single-player first |
+| **Notifications/reminders** | Engagement | Manual usage first |
 
-### The "One More Thing" Trap
+### Your MVP Success Metrics
 
-These features feel small but aren't:
-- **"Just add dark mode"** → Theme system, testing, edge cases
-- **"Let users edit the knowledge map"** → Conflict resolution, versioning, UI complexity
-- **"Show estimated study time"** → Needs calibration data you don't have
-- **"Send reminder notifications"** → Notification infrastructure, preferences, timing logic
+Without grades, you need proxy signals. Track these:
 
-### Your MVP Success Metric
+1. **Return rate**: Users who create a space and come back within 7 days
+2. **Quiz completion**: Users who complete 5+ quizzes in a space
+3. **Mastery movement**: Users whose mastery increases over time
+4. **Self-reported value**: "Did this help you understand better?" (simple thumbs up/down)
 
-Before building anything else, prove:
-> "Students who upload a syllabus and take 3+ quizzes return within 7 days"
+The core question to validate:
 
-If this isn't happening, adding features won't help.
+> **"Do users who engage with Blossom actually understand topics better than they would have otherwise?"**
+
+This is hard to measure directly, but proxies:
+- They return (value signal)
+- Their quiz performance improves (learning signal)
+- They self-report understanding (subjective but useful)
 
 ---
 
-## Summary: First 30 Days Roadmap
+## 8. First 30 Days Roadmap
 
 ```
 Week 1: Foundation
 ├── Set up Supabase (db + auth + storage)
 ├── Set up Next.js with shadcn/ui
 ├── Basic auth flow (sign up, log in, Google OAuth)
-└── Deploy to Vercel + Cloud Run (CI/CD)
+├── Deploy to Vercel + Cloud Run (CI/CD)
+└── Schema: users, spaces (with topic field)
 
-Week 2: Core Upload Flow
-├── Create space flow
-├── File upload to Supabase storage
-├── Background job: PDF → text extraction
-├── Background job: Syllabus → knowledge map
-└── Display knowledge map (simple list view)
+Week 2: Knowledge Map Generation
+├── "Create space" flow: enter topic + goal
+├── AI pipeline: generate knowledge map from topic
+├── Store: knowledge_maps, topics, topic_dependencies
+├── Display: knowledge map as tree/list view
+└── Basic space dashboard
 
-Week 3: Quizzes
-├── Quiz generation from topics
-├── MCQ quiz interface
-├── Response evaluation (Haiku)
-├── Basic mastery tracking
-└── Progress dashboard (v1)
+Week 3: Assessment Loop
+├── Diagnostic quiz generation
+├── Quiz taking interface (MCQ)
+├── Response evaluation
+├── Assessment events + mastery calculation
+├── Self-assessment UI ("How confident are you?")
+└── Schema: quizzes, quiz_questions, quiz_responses, assessment_events, topic_mastery, self_assessments
 
-Week 4: Gap Analysis
-├── Graded test upload
-├── Gap identification
+Week 4: Gaps + Polish
+├── Gap identification from low mastery
 ├── Gap display on dashboard
-├── Quiz targeting gaps
-└── Polish, bugs, user testing
+├── Targeted quiz generation (focus on gaps)
+├── Progress visualization
+├── Dogfood with yourself + 2-3 friends
+└── Bug fixes, UX polish
 ```
 
 ---
 
-## Appendix: Key Technical Snippets
-
-### Supabase Schema (SQL)
+## Appendix: Supabase Schema (SQL)
 
 ```sql
 -- Enable pgvector for future embeddings
-create extension if not exists vector;
+CREATE EXTENSION IF NOT EXISTS vector;
+
+-- Enums
+CREATE TYPE space_context AS ENUM ('exploratory', 'professional', 'academic');
+CREATE TYPE knowledge_map_source AS ENUM ('ai_generated', 'document_extracted', 'user_created');
+CREATE TYPE document_type AS ENUM ('article', 'book_excerpt', 'video_notes', 'self_authored', 'syllabus', 'job_description');
+CREATE TYPE processing_status AS ENUM ('pending', 'processing', 'completed', 'failed');
+CREATE TYPE dependency_strength AS ENUM ('required', 'helpful', 'related');
+CREATE TYPE assessment_event_type AS ENUM ('quiz_response', 'self_assessment', 'graded_test_question', 'interaction_signal');
+CREATE TYPE question_type AS ENUM ('mcq', 'short_answer', 'explanation');
+CREATE TYPE quiz_type AS ENUM ('diagnostic', 'practice', 'review');
 
 -- Core tables
-create table spaces (
-    id uuid primary key default gen_random_uuid(),
-    user_id uuid references auth.users(id) on delete cascade,
-    name text not null,
-    subject text,
-    semester text,
-    created_at timestamptz default now(),
-    settings jsonb default '{}'::jsonb
+CREATE TABLE spaces (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    context_type space_context NOT NULL DEFAULT 'exploratory',
+    topic TEXT NOT NULL,
+    goal TEXT,
+    timeline_end DATE,
+    created_at TIMESTAMPTZ DEFAULT now(),
+    settings JSONB DEFAULT '{}'::jsonb
 );
 
-create table documents (
-    id uuid primary key default gen_random_uuid(),
-    space_id uuid references spaces(id) on delete cascade,
-    type text check (type in ('syllabus', 'material', 'test')),
-    original_filename text not null,
-    storage_path text not null,
-    mime_type text,
-    extracted_text text,
-    processing_status text default 'pending',
-    processed_at timestamptz,
-    created_at timestamptz default now(),
-    metadata jsonb default '{}'::jsonb
+CREATE TABLE documents (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    space_id UUID REFERENCES spaces(id) ON DELETE CASCADE,
+    document_type document_type NOT NULL,
+    original_filename TEXT NOT NULL,
+    storage_path TEXT NOT NULL,
+    mime_type TEXT,
+    extracted_text TEXT,
+    processing_status processing_status DEFAULT 'pending',
+    processed_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ DEFAULT now(),
+    metadata JSONB DEFAULT '{}'::jsonb
 );
 
-create table knowledge_maps (
-    id uuid primary key default gen_random_uuid(),
-    space_id uuid references spaces(id) on delete cascade,
-    document_id uuid references documents(id),
-    version int default 1,
-    is_active boolean default true,
-    created_at timestamptz default now()
+CREATE TABLE knowledge_maps (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    space_id UUID REFERENCES spaces(id) ON DELETE CASCADE,
+    source_type knowledge_map_source NOT NULL DEFAULT 'ai_generated',
+    source_document_id UUID REFERENCES documents(id),
+    version INT DEFAULT 1,
+    is_active BOOLEAN DEFAULT true,
+    created_at TIMESTAMPTZ DEFAULT now()
 );
 
-create table topics (
-    id uuid primary key default gen_random_uuid(),
-    knowledge_map_id uuid references knowledge_maps(id) on delete cascade,
-    parent_topic_id uuid references topics(id),
-    name text not null,
-    description text,
-    sequence_order int,
-    estimated_date date,
-    is_milestone boolean default false,
-    difficulty_level int check (difficulty_level between 1 and 5),
-    metadata jsonb default '{}'::jsonb
+CREATE TABLE topics (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    knowledge_map_id UUID REFERENCES knowledge_maps(id) ON DELETE CASCADE,
+    parent_topic_id UUID REFERENCES topics(id),
+    name TEXT NOT NULL,
+    description TEXT,
+    learning_objectives TEXT[],
+    sequence_order INT,
+    difficulty_level INT CHECK (difficulty_level BETWEEN 1 AND 5),
+    estimated_hours NUMERIC(4,1),
+    metadata JSONB DEFAULT '{}'::jsonb
 );
 
-create table topic_mastery (
-    id uuid primary key default gen_random_uuid(),
-    user_id uuid references auth.users(id) on delete cascade,
-    topic_id uuid references topics(id) on delete cascade,
-    mastery_level int default 0 check (mastery_level between 0 and 100),
-    confidence numeric(3,2) default 0,
-    last_assessed_at timestamptz,
-    assessment_count int default 0,
-    is_gap boolean default false,
-    gap_priority int,
-    unique (user_id, topic_id)
+CREATE TABLE topic_dependencies (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    topic_id UUID REFERENCES topics(id) ON DELETE CASCADE,
+    depends_on_id UUID REFERENCES topics(id) ON DELETE CASCADE,
+    strength dependency_strength NOT NULL,
+    UNIQUE(topic_id, depends_on_id)
 );
+
+CREATE TABLE topic_mastery (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
+    topic_id UUID REFERENCES topics(id) ON DELETE CASCADE,
+    mastery_level INT DEFAULT 0 CHECK (mastery_level BETWEEN 0 AND 100),
+    confidence NUMERIC(3,2) DEFAULT 0 CHECK (confidence BETWEEN 0 AND 1),
+    self_reported INT CHECK (self_reported BETWEEN 0 AND 100),
+    last_assessed_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ DEFAULT now(),
+    updated_at TIMESTAMPTZ DEFAULT now(),
+    UNIQUE(user_id, topic_id)
+);
+
+CREATE TABLE assessment_events (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
+    topic_id UUID REFERENCES topics(id) ON DELETE CASCADE,
+    event_type assessment_event_type NOT NULL,
+    signal_strength INT CHECK (signal_strength BETWEEN 0 AND 100),
+    is_positive BOOLEAN NOT NULL,
+    source_id UUID,
+    ai_analysis JSONB,
+    created_at TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE TABLE gaps (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
+    topic_id UUID REFERENCES topics(id) ON DELETE CASCADE,
+    priority INT CHECK (priority BETWEEN 1 AND 10),
+    identified_at TIMESTAMPTZ DEFAULT now(),
+    resolved_at TIMESTAMPTZ,
+    source_event_id UUID REFERENCES assessment_events(id),
+    misconception TEXT,
+    remediation TEXT,
+    metadata JSONB DEFAULT '{}'::jsonb,
+    UNIQUE(user_id, topic_id)
+);
+
+CREATE TABLE quizzes (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    space_id UUID REFERENCES spaces(id) ON DELETE CASCADE,
+    user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
+    quiz_type quiz_type NOT NULL,
+    target_topic_ids UUID[],
+    created_at TIMESTAMPTZ DEFAULT now(),
+    completed_at TIMESTAMPTZ,
+    overall_score INT
+);
+
+CREATE TABLE quiz_questions (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    quiz_id UUID REFERENCES quizzes(id) ON DELETE CASCADE,
+    topic_id UUID REFERENCES topics(id),
+    question_type question_type NOT NULL DEFAULT 'mcq',
+    question_text TEXT NOT NULL,
+    options JSONB,
+    correct_answer TEXT NOT NULL,
+    difficulty INT CHECK (difficulty BETWEEN 1 AND 5),
+    reasoning_required TEXT,
+    tests_objective TEXT,
+    misconception_tested TEXT,
+    sequence_order INT
+);
+
+CREATE TABLE quiz_responses (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    question_id UUID REFERENCES quiz_questions(id) ON DELETE CASCADE,
+    user_answer TEXT,
+    is_correct BOOLEAN,
+    ai_evaluation JSONB,
+    feedback TEXT,
+    responded_at TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE TABLE self_assessments (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
+    topic_id UUID REFERENCES topics(id) ON DELETE CASCADE,
+    confidence_level INT CHECK (confidence_level BETWEEN 0 AND 100),
+    notes TEXT,
+    created_at TIMESTAMPTZ DEFAULT now()
+);
+
+-- Indexes
+CREATE INDEX idx_spaces_user ON spaces(user_id);
+CREATE INDEX idx_topics_knowledge_map ON topics(knowledge_map_id);
+CREATE INDEX idx_topic_mastery_user ON topic_mastery(user_id);
+CREATE INDEX idx_assessment_events_user_topic ON assessment_events(user_id, topic_id, created_at DESC);
+CREATE INDEX idx_gaps_user_active ON gaps(user_id) WHERE resolved_at IS NULL;
+CREATE INDEX idx_quizzes_space ON quizzes(space_id);
 
 -- Row Level Security
-alter table spaces enable row level security;
-create policy "Users can only see their own spaces"
-    on spaces for all using (auth.uid() = user_id);
+ALTER TABLE spaces ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Users can only access their own spaces"
+    ON spaces FOR ALL USING (auth.uid() = user_id);
 
--- Similar policies for other tables...
-```
+ALTER TABLE documents ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Users can only access documents in their spaces"
+    ON documents FOR ALL USING (
+        space_id IN (SELECT id FROM spaces WHERE user_id = auth.uid())
+    );
 
-### FastAPI Auth Middleware
+ALTER TABLE knowledge_maps ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Users can only access knowledge maps in their spaces"
+    ON knowledge_maps FOR ALL USING (
+        space_id IN (SELECT id FROM spaces WHERE user_id = auth.uid())
+    );
 
-```python
-# middleware/auth.py
-from fastapi import Depends, HTTPException, status
-from fastapi.security import HTTPBearer
-from supabase import create_client
-import os
-
-security = HTTPBearer()
-supabase = create_client(os.environ["SUPABASE_URL"], os.environ["SUPABASE_KEY"])
-
-async def get_current_user(token: str = Depends(security)):
-    try:
-        user = supabase.auth.get_user(token.credentials)
-        return user
-    except Exception:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid authentication credentials"
+ALTER TABLE topics ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Users can only access topics in their knowledge maps"
+    ON topics FOR ALL USING (
+        knowledge_map_id IN (
+            SELECT km.id FROM knowledge_maps km
+            JOIN spaces s ON km.space_id = s.id
+            WHERE s.user_id = auth.uid()
         )
-```
+    );
 
-### Document Processing Job
+ALTER TABLE topic_mastery ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Users can only access their own mastery"
+    ON topic_mastery FOR ALL USING (auth.uid() = user_id);
 
-```python
-# jobs/process_document.py
-from anthropic import Anthropic
-import fitz  # PyMuPDF
+ALTER TABLE assessment_events ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Users can only access their own events"
+    ON assessment_events FOR ALL USING (auth.uid() = user_id);
 
-async def process_document(document_id: str):
-    # 1. Fetch document metadata
-    doc = await db.documents.get(document_id)
-    
-    # 2. Download file from storage
-    file_bytes = await storage.download(doc.storage_path)
-    
-    # 3. Extract text
-    if doc.mime_type == "application/pdf":
-        text = extract_pdf_text(file_bytes)
-        if not text or len(text) < 100:  # Probably scanned
-            text = await extract_with_vision(file_bytes)
-    elif doc.mime_type.startswith("image/"):
-        text = await extract_with_vision(file_bytes)
-    else:
-        text = file_bytes.decode("utf-8")
-    
-    # 4. Update document
-    await db.documents.update(document_id, {
-        "extracted_text": text,
-        "processing_status": "extracted"
-    })
-    
-    # 5. If syllabus, trigger knowledge extraction
-    if doc.type == "syllabus":
-        await extract_knowledge_map(document_id)
+ALTER TABLE gaps ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Users can only access their own gaps"
+    ON gaps FOR ALL USING (auth.uid() = user_id);
 
-def extract_pdf_text(file_bytes: bytes) -> str:
-    doc = fitz.open(stream=file_bytes, filetype="pdf")
-    text = ""
-    for page in doc:
-        text += page.get_text()
-    return text.strip()
+ALTER TABLE quizzes ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Users can only access their own quizzes"
+    ON quizzes FOR ALL USING (auth.uid() = user_id);
 
-async def extract_with_vision(file_bytes: bytes) -> str:
-    client = Anthropic()
-    # Use Claude's vision to extract text from images/scanned PDFs
-    response = await client.messages.create(
-        model="claude-haiku-4-5-20251001",
-        max_tokens=4096,
-        messages=[{
-            "role": "user",
-            "content": [
-                {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": base64.b64encode(file_bytes).decode()}},
-                {"type": "text", "text": "Extract all text from this document. Preserve structure and formatting where possible."}
-            ]
-        }]
-    )
-    return response.content[0].text
+ALTER TABLE quiz_questions ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Users can only access questions in their quizzes"
+    ON quiz_questions FOR ALL USING (
+        quiz_id IN (SELECT id FROM quizzes WHERE user_id = auth.uid())
+    );
+
+ALTER TABLE quiz_responses ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Users can only access responses to their questions"
+    ON quiz_responses FOR ALL USING (
+        question_id IN (
+            SELECT qq.id FROM quiz_questions qq
+            JOIN quizzes q ON qq.quiz_id = q.id
+            WHERE q.user_id = auth.uid()
+        )
+    );
+
+ALTER TABLE self_assessments ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Users can only access their own self assessments"
+    ON self_assessments FOR ALL USING (auth.uid() = user_id);
 ```
 
 ---
+
+## Summary of Changes from v2
+
+| Aspect | v2 (Student MVP) | v3 (General Learner MVP) |
+|--------|------------------|--------------------------|
+| Primary flow | Upload syllabus → extract map | Enter topic → generate map |
+| Knowledge map source | Document extraction | AI generation |
+| Key assessment signal | Graded tests | Quizzes + self-assessment |
+| Timeline | External (semester) | Self-paced (optional end date) |
+| Document uploads | Core feature | Optional enrichment |
+| Self-assessment | Future feature | **MVP feature** |
+| Diagnostic quiz | Nice to have | **Core feature** |
+| Target users | Students you don't have | You + friends |
+
+The architecture is the same. The prompts and user flow changed. You can still build the student/syllabus path later—just add the document extraction prompts and change the space creation flow.
