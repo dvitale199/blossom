@@ -1,5 +1,74 @@
 # Blossom.ai v0 — MVP README
 
+## Implementation Status
+
+### Phase 1: Foundation
+- [ ] Environment setup complete (see below)
+- [ ] Run `blossom-schema.sql` in Supabase
+- [ ] FastAPI project skeleton with health check
+- [ ] Basic /chat endpoint (stores messages, no AI)
+- [ ] Supabase auth integration
+- [ ] Frontend: auth flow, basic chat UI
+
+### Phase 2: Tutor
+- [ ] Claude API integration
+- [ ] Prompt assembly (load profile → inject context)
+- [ ] Conversation persistence
+- [ ] Session start/end events
+
+### Phase 3: Background Job
+- [ ] Extraction prompt integration
+- [ ] Session timeout detection (30 min)
+- [ ] Profile update logic
+- [ ] Quiz attempt logging
+
+### Phase 4: Polish
+- [ ] Event emission (all event types)
+- [ ] Error handling
+- [ ] Basic settings page
+- [ ] Mobile responsive
+
+---
+
+## Environment Setup
+
+- [ ] Supabase project created
+- [ ] `blossom-schema.sql` executed
+- [ ] Environment variables set (see below)
+- [ ] FastAPI running locally
+- [ ] Next.js running locally
+
+### Required Environment Variables
+
+```bash
+# Backend (apps/api/.env)
+ANTHROPIC_API_KEY=
+SUPABASE_URL=
+SUPABASE_ANON_KEY=
+SUPABASE_SERVICE_ROLE_KEY=
+
+# Frontend (apps/web/.env.local)
+NEXT_PUBLIC_SUPABASE_URL=
+NEXT_PUBLIC_SUPABASE_ANON_KEY=
+NEXT_PUBLIC_API_URL=http://localhost:8000
+
+# Optional (for testing other providers)
+OPENAI_API_KEY=
+GOOGLE_API_KEY=
+```
+
+---
+
+## Files Reference
+
+| Document | Purpose |
+|----------|---------|
+| `blossom-ai-architecture.md` | Prompts, schemas, extraction logic, code patterns |
+| `blossom-schema.sql` | Database setup — run once in Supabase |
+| `blossom-CLAUDE.md` | Quick reference for AI assistants |
+
+---
+
 ## What We're Testing
 
 **Hypothesis:** An AI tutor that teaches through conversation, asks probing questions, and validates understanding via quizzes helps people learn better than just asking ChatGPT.
