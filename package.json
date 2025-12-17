@@ -1,0 +1,14 @@
+{
+  "name": "blossom",
+  "private": true,
+  "scripts": {
+    "dev:web": "pnpm --filter web dev",
+    "dev:api": "cd apps/api && uvicorn src.main:app --reload",
+    "build:web": "pnpm --filter web build",
+    "test:web": "pnpm --filter web test",
+    "test:api": "cd apps/api && pytest",
+    "lint:web": "pnpm --filter web lint",
+    "lint:api": "cd apps/api && ruff check ."
+  },
+  "packageManager": "pnpm@9.0.0"
+}
