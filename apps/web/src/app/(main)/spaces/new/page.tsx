@@ -11,9 +11,11 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { useAuth } from "@/hooks/use-auth";
 
 export default function NewSpacePage() {
   const router = useRouter();
+  const { api, loading: authLoading } = useAuth();
   const [name, setName] = useState("");
   const [topic, setTopic] = useState("");
   const [goal, setGoal] = useState("");
@@ -22,20 +24,36 @@ export default function NewSpacePage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    if (!api) {
+      setError("Not authenticated");
+      return;
+    }
+
     setLoading(true);
     setError("");
 
     try {
-      // TODO: Call API to create space
-      // For now, just redirect
-      console.log("Creating space:", { name, topic, goal });
-      router.push("/spaces");
-    } catch {
-      setError("Failed to create space");
-    } finally {
+      const space = await api.spaces.create({
+        name,
+        topic,
+        goal: goal || undefined,
+      });
+      // Redirect to the new space's chat page
+      router.push(`/spaces/${space.id}/chat`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to create space");
       setLoading(false);
     }
   };
+
+  if (authLoading) {
+    return (
+      <div className="flex h-64 items-center justify-center">
+        <div className="text-zinc-500">Loading...</div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex items-center justify-center p-8">

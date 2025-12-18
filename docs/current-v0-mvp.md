@@ -209,93 +209,38 @@ Backend is smart:
 
 ## Data Model (v0)
 
-Minimal schema that supports future expansion.
+**Full schema:** See `blossom-schema.sql` — run this in Supabase.
 
-```sql
--- Enums (expandable later)
-CREATE TYPE space_context AS ENUM ('exploratory');  -- Add 'professional', 'academic' later
-CREATE TYPE message_role AS ENUM ('user', 'assistant', 'system');
+### v0 Tables (use now)
 
--- Users (Supabase Auth handles this, but we reference it)
--- auth.users exists automatically
+| Table | Purpose |
+|-------|---------|
+| `spaces` | Learning contexts (topic + goal) |
+| `conversations` | Chat sessions within spaces |
+| `messages` | Individual messages, quiz data in metadata |
 
--- Spaces: a learning context
-CREATE TABLE spaces (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
-    
-    -- Core fields
-    name TEXT NOT NULL,
-    topic TEXT NOT NULL,
-    goal TEXT,
-    
-    -- Future-proofing
-    context_type space_context NOT NULL DEFAULT 'exploratory',
-    
-    -- Timestamps
-    created_at TIMESTAMPTZ DEFAULT now(),
-    updated_at TIMESTAMPTZ DEFAULT now(),
-    
-    -- Expansion slot
-    metadata JSONB DEFAULT '{}'::jsonb
-);
+### v1 Tables (created but not used yet)
 
--- Conversations: a chat session within a space
-CREATE TABLE conversations (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    space_id UUID REFERENCES spaces(id) ON DELETE CASCADE,
-    user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
-    
-    -- Timestamps
-    started_at TIMESTAMPTZ DEFAULT now(),
-    last_message_at TIMESTAMPTZ DEFAULT now(),
-    
-    -- Future: AI-generated summary for context compression
-    summary TEXT,
-    
-    -- Expansion slot
-    metadata JSONB DEFAULT '{}'::jsonb
-);
+| Table | Purpose |
+|-------|---------|
+| `user_profiles` | Cross-session learning state, tutor personalization |
+| `quiz_attempts` | Extracted quiz history for analytics |
+| `learning_events` | Event log for debugging and future features |
 
--- Messages: individual exchanges
-CREATE TABLE messages (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    conversation_id UUID REFERENCES conversations(id) ON DELETE CASCADE,
-    
-    -- Core fields
-    role message_role NOT NULL,
-    content TEXT NOT NULL,
-    
-    -- Timestamps
-    created_at TIMESTAMPTZ DEFAULT now(),
-    
-    -- Expansion slot: will hold quiz data, topic annotations, etc.
-    metadata JSONB DEFAULT '{}'::jsonb
-);
+### v0 Data Flow
 
--- Indexes
-CREATE INDEX idx_spaces_user ON spaces(user_id);
-CREATE INDEX idx_conversations_space ON conversations(space_id);
-CREATE INDEX idx_conversations_user ON conversations(user_id);
-CREATE INDEX idx_messages_conversation ON messages(conversation_id);
-CREATE INDEX idx_messages_created ON messages(conversation_id, created_at);
+```
+User creates space → starts conversation → sends messages → tutor responds
+Quizzes appear inline, stored in message.metadata
+```
 
--- Row Level Security
-ALTER TABLE spaces ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "Users own their spaces"
-    ON spaces FOR ALL USING (auth.uid() = user_id);
+### v1 Data Flow (adds)
 
-ALTER TABLE conversations ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "Users own their conversations"
-    ON conversations FOR ALL USING (auth.uid() = user_id);
-
-ALTER TABLE messages ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "Users own messages in their conversations"
-    ON messages FOR ALL USING (
-        conversation_id IN (
-            SELECT id FROM conversations WHERE user_id = auth.uid()
-        )
-    );
+```
+Background job runs after session_ended
+Extracts: topics, comprehension, quiz results, learning style
+Updates: user_profiles, quiz_attempts, learning_events
+Tutor reads user_profiles for personalization
 ```
 
 ### Quiz Data Structure (Stored in message.metadata)

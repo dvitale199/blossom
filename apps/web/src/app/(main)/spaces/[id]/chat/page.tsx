@@ -1,11 +1,13 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { useParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ChatMessage } from "@/components/chat/chat-message";
 import { QuizBlock } from "@/components/chat/quiz-block";
+import { useAuth } from "@/hooks/use-auth";
+import { Message as ApiMessage, Space } from "@/lib/api";
 
 interface Message {
   id: string;
@@ -28,12 +30,27 @@ interface Message {
   };
 }
 
+function apiMessageToMessage(msg: ApiMessage): Message {
+  return {
+    id: msg.id,
+    role: msg.role as "user" | "assistant",
+    content: msg.content,
+    metadata: msg.metadata as Message["metadata"],
+  };
+}
+
 export default function ChatPage() {
   const params = useParams();
   const spaceId = params.id as string;
+  const { api, loading: authLoading } = useAuth();
+
+  const [space, setSpace] = useState<Space | null>(null);
+  const [conversationId, setConversationId] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
+  const [initializing, setInitializing] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const scrollToBottom = () => {
@@ -44,33 +61,88 @@ export default function ChatPage() {
     scrollToBottom();
   }, [messages]);
 
+  // Initialize: load space, get or create conversation, load messages
+  const initializeChat = useCallback(async () => {
+    if (!api || !spaceId) return;
+
+    try {
+      setInitializing(true);
+      setError(null);
+
+      // Get space details
+      const spaceData = await api.spaces.get(spaceId);
+      setSpace(spaceData);
+
+      // Get existing conversations or create one
+      const conversations = await api.conversations.list(spaceId);
+
+      let convId: string;
+      if (conversations.length > 0) {
+        // Use the most recent conversation
+        convId = conversations[0].id;
+      } else {
+        // Create a new conversation
+        const newConv = await api.conversations.create(spaceId);
+        convId = newConv.id;
+      }
+
+      setConversationId(convId);
+
+      // Load messages
+      const convWithMessages = await api.conversations.get(convId);
+      setMessages(convWithMessages.messages.map(apiMessageToMessage));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to initialize chat");
+    } finally {
+      setInitializing(false);
+    }
+  }, [api, spaceId]);
+
+  useEffect(() => {
+    if (!authLoading && api) {
+      initializeChat();
+    }
+  }, [authLoading, api, initializeChat]);
+
   const handleSend = async () => {
-    if (!input.trim() || loading) return;
+    if (!input.trim() || loading || !api || !conversationId) return;
 
-    const userMessage: Message = {
-      id: Date.now().toString(),
-      role: "user",
-      content: input,
-    };
-
-    setMessages((prev) => [...prev, userMessage]);
+    const userContent = input;
     setInput("");
     setLoading(true);
 
+    // Optimistically add user message
+    const tempUserMessage: Message = {
+      id: `temp-${Date.now()}`,
+      role: "user",
+      content: userContent,
+    };
+    setMessages((prev) => [...prev, tempUserMessage]);
+
     try {
-      // TODO: Call API to send message
-      // For now, simulate a response
-      await new Promise((resolve) => setTimeout(resolve, 1000));
+      const response = await api.conversations.sendMessage(conversationId, {
+        content: userContent,
+      });
 
-      const assistantMessage: Message = {
-        id: (Date.now() + 1).toString(),
-        role: "assistant",
-        content: `I received your message about "${input}". This is a placeholder response. Once connected to the backend, I'll be your AI tutor helping you learn about ${spaceId}!`,
-      };
-
-      setMessages((prev) => [...prev, assistantMessage]);
-    } catch (error) {
-      console.error("Failed to send message:", error);
+      // Replace temp message with real one and add assistant response
+      setMessages((prev) => {
+        // Remove the temp message
+        const filtered = prev.filter((m) => m.id !== tempUserMessage.id);
+        // Add the real user message (it's stored on server) and assistant response
+        return [
+          ...filtered,
+          {
+            id: `user-${Date.now()}`,
+            role: "user" as const,
+            content: userContent,
+          },
+          apiMessageToMessage(response.message),
+        ];
+      });
+    } catch (err) {
+      // Remove the temp message and show error
+      setMessages((prev) => prev.filter((m) => m.id !== tempUserMessage.id));
+      setError(err instanceof Error ? err.message : "Failed to send message");
     } finally {
       setLoading(false);
     }
@@ -87,15 +159,50 @@ export default function ChatPage() {
     messageId: string,
     responses: Array<{ question_id: string; user_answer: string }>
   ) => {
-    // TODO: Submit quiz responses to API
-    console.log("Quiz submitted:", messageId, responses);
+    if (!api) return;
+
+    try {
+      const updatedMessage = await api.messages.submitQuizResponse(
+        messageId,
+        responses
+      );
+
+      // Update the message in state with the response
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === messageId ? apiMessageToMessage(updatedMessage) : m
+        )
+      );
+    } catch (err) {
+      console.error("Failed to submit quiz:", err);
+    }
   };
+
+  if (authLoading || initializing) {
+    return (
+      <div className="flex h-screen items-center justify-center">
+        <div className="text-zinc-500">Loading...</div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="flex h-screen flex-col items-center justify-center gap-4">
+        <p className="text-red-500">{error}</p>
+        <Button onClick={() => initializeChat()}>Retry</Button>
+      </div>
+    );
+  }
 
   return (
     <div className="flex h-screen flex-col">
       {/* Header */}
       <header className="border-b p-4">
-        <h1 className="text-lg font-semibold">Learning Space</h1>
+        <h1 className="text-lg font-semibold">{space?.name || "Learning Space"}</h1>
+        {space?.topic && (
+          <p className="text-sm text-zinc-500">{space.topic}</p>
+        )}
       </header>
 
       {/* Messages */}

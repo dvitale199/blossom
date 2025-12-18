@@ -2,14 +2,21 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 async function fetchAPI<T>(
   endpoint: string,
-  options: RequestInit = {}
+  options: RequestInit = {},
+  token?: string
 ): Promise<T> {
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    ...(options.headers as Record<string, string>),
+  };
+
+  if (token) {
+    headers["Authorization"] = `Bearer ${token}`;
+  }
+
   const response = await fetch(`${API_URL}${endpoint}`, {
     ...options,
-    headers: {
-      "Content-Type": "application/json",
-      ...options.headers,
-    },
+    headers,
   });
 
   if (!response.ok) {
@@ -20,36 +27,74 @@ async function fetchAPI<T>(
   return response.json();
 }
 
+/**
+ * Create an authenticated API client.
+ * Pass the Supabase session access token.
+ */
+export function createAuthenticatedApi(token: string) {
+  return {
+    // Health check (no auth needed)
+    health: () => fetchAPI<{ status: string }>("/health"),
+
+    // Spaces
+    spaces: {
+      list: () => fetchAPI<Space[]>("/api/spaces", {}, token),
+      get: (id: string) => fetchAPI<Space>(`/api/spaces/${id}`, {}, token),
+      create: (data: CreateSpaceRequest) =>
+        fetchAPI<Space>(
+          "/api/spaces",
+          {
+            method: "POST",
+            body: JSON.stringify(data),
+          },
+          token
+        ),
+    },
+
+    // Conversations
+    conversations: {
+      list: (spaceId: string) =>
+        fetchAPI<Conversation[]>(`/api/spaces/${spaceId}/conversations`, {}, token),
+      get: (id: string) =>
+        fetchAPI<ConversationWithMessages>(`/api/conversations/${id}`, {}, token),
+      create: (spaceId: string) =>
+        fetchAPI<Conversation>(
+          `/api/spaces/${spaceId}/conversations`,
+          { method: "POST" },
+          token
+        ),
+      sendMessage: (conversationId: string, data: { content: string }) =>
+        fetchAPI<MessageResponse>(
+          `/api/conversations/${conversationId}/messages`,
+          {
+            method: "POST",
+            body: JSON.stringify(data),
+          },
+          token
+        ),
+    },
+
+    // Quiz responses
+    messages: {
+      submitQuizResponse: (
+        messageId: string,
+        responses: Array<{ question_id: string; user_answer: string }>
+      ) =>
+        fetchAPI<Message>(
+          `/api/messages/${messageId}/quiz-response`,
+          {
+            method: "POST",
+            body: JSON.stringify({ responses }),
+          },
+          token
+        ),
+    },
+  };
+}
+
+// Unauthenticated API (for health checks, etc.)
 export const api = {
-  // Health check
   health: () => fetchAPI<{ status: string }>("/health"),
-
-  // Spaces
-  spaces: {
-    list: () => fetchAPI<Space[]>("/api/spaces"),
-    get: (id: string) => fetchAPI<Space>(`/api/spaces/${id}`),
-    create: (data: CreateSpaceRequest) =>
-      fetchAPI<Space>("/api/spaces", {
-        method: "POST",
-        body: JSON.stringify(data),
-      }),
-  },
-
-  // Conversations
-  conversations: {
-    list: (spaceId: string) =>
-      fetchAPI<Conversation[]>(`/api/spaces/${spaceId}/conversations`),
-    get: (id: string) => fetchAPI<ConversationWithMessages>(`/api/conversations/${id}`),
-    create: (spaceId: string) =>
-      fetchAPI<Conversation>(`/api/spaces/${spaceId}/conversations`, {
-        method: "POST",
-      }),
-    sendMessage: (conversationId: string, data: { content: string }) =>
-      fetchAPI<MessageResponse>(`/api/conversations/${conversationId}/messages`, {
-        method: "POST",
-        body: JSON.stringify(data),
-      }),
-  },
 };
 
 // Types
